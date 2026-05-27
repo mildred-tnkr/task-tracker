@@ -59,11 +59,13 @@
     .form-group { display: flex; flex-direction: column; gap: 4px; }
     .form-group label { font-size: 0.73rem; font-weight: 500; color: var(--text-muted); }
     .form-group.task-name { flex: 1; min-width: 180px; }
-    input[type="text"], input[type="date"], select {
+    input[type="text"], input[type="date"], select, textarea {
       border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
       font-size: 0.875rem; color: var(--text); background: var(--bg); outline: none; transition: border-color 0.15s;
+      font-family: inherit;
     }
-    input[type="text"]:focus, input[type="date"]:focus, select:focus { border-color: var(--accent); background: #fff; }
+    input[type="text"]:focus, input[type="date"]:focus, select:focus, textarea:focus { border-color: var(--accent); background: #fff; }
+    textarea { resize: vertical; min-height: 60px; line-height: 1.5; }
     .btn { padding: 8px 16px; border-radius: 6px; border: none; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: background 0.15s; white-space: nowrap; }
     .btn-primary { background: var(--accent); color: #fff; }
     .btn-primary:hover { background: var(--accent-hover); }
@@ -143,7 +145,7 @@
     .task-due.overdue { color: var(--danger); font-weight: 600; }
     .task-due.today { color: var(--warn); font-weight: 600; }
     .task-last { font-size: 0.73rem; color: var(--text-muted); font-style: italic; }
-    .task-notes { font-size: 0.78rem; color: var(--text-muted); margin-top: 3px; font-style: italic; }
+    .task-notes { font-size: 0.78rem; color: var(--text-muted); margin-top: 3px; font-style: italic; white-space: pre-wrap; }
     .status-cycle { font-size: 0.72rem; color: var(--text-muted); cursor: pointer; padding: 2px 7px; border-radius: 10px; border: 1px solid var(--border); white-space: nowrap; }
     .status-cycle:hover { background: var(--bg); }
 
@@ -220,6 +222,41 @@
           <label>Due date</label>
           <input type="date" id="new-due" />
         </div>
+        <div class="form-group" id="daily-options-group" style="display:none">
+          <label>Frequency</label>
+          <select id="new-daily-type">
+            <option value="everyday">Every day</option>
+            <option value="weekdays">Weekdays only</option>
+          </select>
+        </div>
+        <div class="form-group" id="weekday-group" style="display:none">
+          <label>Day of week</label>
+          <select id="new-weekday">
+            <option value="1">Monday</option>
+            <option value="2">Tuesday</option>
+            <option value="3">Wednesday</option>
+            <option value="4">Thursday</option>
+            <option value="5">Friday</option>
+            <option value="6">Saturday</option>
+            <option value="0">Sunday</option>
+          </select>
+        </div>
+        <div class="form-group" id="monthday-group" style="display:none">
+          <label>Day of month</label>
+          <select id="new-monthday">
+            <option value="1">1st</option><option value="2">2nd</option><option value="3">3rd</option>
+            <option value="4">4th</option><option value="5">5th</option><option value="6">6th</option>
+            <option value="7">7th</option><option value="8">8th</option><option value="9">9th</option>
+            <option value="10">10th</option><option value="11">11th</option><option value="12">12th</option>
+            <option value="13">13th</option><option value="14">14th</option><option value="15">15th</option>
+            <option value="16">16th</option><option value="17">17th</option><option value="18">18th</option>
+            <option value="19">19th</option><option value="20">20th</option><option value="21">21st</option>
+            <option value="22">22nd</option><option value="23">23rd</option><option value="24">24th</option>
+            <option value="25">25th</option><option value="26">26th</option><option value="27">27th</option>
+            <option value="28">28th</option><option value="29">29th</option><option value="30">30th</option>
+            <option value="31">31st</option><option value="0">Last day</option>
+          </select>
+        </div>
         <div class="form-group">
           <label>Priority</label>
           <select id="new-priority">
@@ -235,7 +272,7 @@
       <div class="form-row" style="margin-top:8px">
         <div class="form-group" style="flex:1">
           <label>Notes (optional)</label>
-          <input type="text" id="new-notes" placeholder="Any extra context…" />
+          <textarea id="new-notes" placeholder="Any extra context… (Shift+Enter for new lines)"></textarea>
         </div>
       </div>
     </div>
@@ -330,6 +367,9 @@ function selectType(type, btn) {
   document.querySelectorAll('.type-tab').forEach(b => b.className = 'type-tab');
   btn.className = 'type-tab active-' + type;
   document.getElementById('due-group').style.display = type === 'none' ? '' : 'none';
+  document.getElementById('daily-options-group').style.display = type === 'daily' ? '' : 'none';
+  document.getElementById('weekday-group').style.display = type === 'weekly' ? '' : 'none';
+  document.getElementById('monthday-group').style.display = type === 'monthly' ? '' : 'none';
 }
 
 // --- Date helpers ---
@@ -337,12 +377,46 @@ function today() { return new Date().toISOString().split('T')[0]; }
 function isOverdue(t) { return t.recurrence === 'none' && t.due && t.due < today() && t.status !== 'done'; }
 function isDueToday(t) { return t.recurrence === 'none' && t.due && t.due === today() && t.status !== 'done'; }
 
-function nextDueDate(recurrence) {
+function nextDueDate(recurrence, weekDay, monthDay, dailyType) {
   const d = new Date();
-  if (recurrence === 'daily') d.setDate(d.getDate() + 1);
-  else if (recurrence === 'weekly') d.setDate(d.getDate() + 7);
-  else if (recurrence === 'monthly') d.setMonth(d.getMonth() + 1);
+  if (recurrence === 'daily') {
+    d.setDate(d.getDate() + 1);
+    if (dailyType === 'weekdays') {
+      // Skip to Monday if landing on Saturday or Sunday
+      const day = d.getDay();
+      if (day === 6) d.setDate(d.getDate() + 2); // Sat → Mon
+      else if (day === 0) d.setDate(d.getDate() + 1); // Sun → Mon
+    }
+  } else if (recurrence === 'weekly') {
+    if (weekDay !== null && weekDay !== undefined) {
+      const cur = d.getDay();
+      let diff = (parseInt(weekDay) - cur + 7) % 7;
+      if (diff === 0) diff = 7; // same day = next week
+      d.setDate(d.getDate() + diff);
+    } else {
+      d.setDate(d.getDate() + 7);
+    }
+  } else if (recurrence === 'monthly') {
+    if (monthDay !== null && monthDay !== undefined) {
+      const md = parseInt(monthDay);
+      if (md === 0) {
+        // Last day of next month
+        d.setDate(1); d.setMonth(d.getMonth() + 2); d.setDate(0);
+      } else {
+        d.setDate(1); d.setMonth(d.getMonth() + 1); d.setDate(md);
+      }
+    } else {
+      d.setMonth(d.getMonth() + 1);
+    }
+  }
   return d.toISOString().split('T')[0];
+}
+
+const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function ordinal(n) {
+  if (n === 0) return 'last day';
+  const s = ['th','st','nd','rd'], v = n % 100;
+  return n + (s[(v-20)%10] || s[v] || s[0]);
 }
 
 function daysSince(dateStr) {
@@ -357,14 +431,23 @@ function daysSince(dateStr) {
 function addTask() {
   const name = document.getElementById('new-name').value.trim();
   if (!name) { document.getElementById('new-name').focus(); return; }
+  const weekDay = newTaskType === 'weekly' ? parseInt(document.getElementById('new-weekday').value) : null;
+  const monthDay = newTaskType === 'monthly' ? parseInt(document.getElementById('new-monthday').value) : null;
+  const dailyType = newTaskType === 'daily' ? document.getElementById('new-daily-type').value : null;
+  const initialDue = newTaskType === 'none'
+    ? (document.getElementById('new-due').value || null)
+    : nextDueDate(newTaskType, weekDay, monthDay, dailyType);
   tasks.unshift({
     id: Date.now().toString(),
     name,
-    due: newTaskType === 'none' ? (document.getElementById('new-due').value || null) : null,
+    due: initialDue,
     priority: document.getElementById('new-priority').value,
-    notes: document.getElementById('new-notes').value.trim() || null,
+    notes: document.getElementById('new-notes').value.replace(/\r\n/g,'\n').trim() || null,
     status: 'todo',
     recurrence: newTaskType,
+    weekDay,
+    monthDay,
+    dailyType,
     lastCompleted: null,
     created: new Date().toISOString()
   });
@@ -390,7 +473,7 @@ function toggleDone(id) {
     // Recurring: log completion, reset, advance
     t.lastCompleted = today();
     t.status = 'todo';
-    t.due = nextDueDate(t.recurrence);
+    t.due = nextDueDate(t.recurrence, t.weekDay, t.monthDay, t.dailyType);
     // Show brief "logged" feedback
     const card = document.querySelector(`[data-id="${id}"]`);
     if (card) {
@@ -439,7 +522,7 @@ function startEdit(id) {
       </div>
     </div>
     <div class="edit-row">
-      <div class="form-group" style="flex:1"><label>Notes</label><input type="text" id="eno-${id}" value="${esc(t.notes||'')}" /></div>
+      <div class="form-group" style="flex:1"><label>Notes</label><textarea id="eno-${id}">${esc(t.notes||'')}</textarea></div>
       <button class="btn btn-primary btn-sm" onclick="saveEdit('${id}')">Save</button>
       <button class="btn btn-ghost btn-sm" onclick="cancelEdit()">Cancel</button>
     </div>`;
@@ -523,9 +606,16 @@ function renderTask(t) {
     if (overdue) { dueText=`⚠ Overdue · ${fmt}`; dueClass+=' overdue'; }
     else if (dueToday) { dueText=`Due today · ${fmt}`; dueClass+=' today'; }
     else dueText=`Due ${fmt}`;
-  } else if (t.due && rec !== 'none') {
-    const fmt = new Date(t.due+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
-    dueText = `Next: ${fmt}`;
+  } else if (rec !== 'none') {
+    let schedule = '';
+    if (rec === 'daily')
+      schedule = t.dailyType === 'weekdays' ? 'Weekdays only' : 'Every day';
+    else if (rec === 'weekly' && t.weekDay !== null && t.weekDay !== undefined)
+      schedule = `Every ${DAY_NAMES[t.weekDay]}`;
+    else if (rec === 'monthly' && t.monthDay !== null && t.monthDay !== undefined)
+      schedule = `Every ${ordinal(t.monthDay)}`;
+    const fmt = t.due ? new Date(t.due+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : null;
+    dueText = [schedule, fmt ? `Next: ${fmt}` : ''].filter(Boolean).join(' · ');
   }
 
   const lastDone = t.lastCompleted ? `Last done ${daysSince(t.lastCompleted)}` : '';
@@ -616,7 +706,8 @@ function render() {
 }
 
 document.getElementById('new-name').addEventListener('keydown', e => { if(e.key==='Enter') addTask(); });
-document.getElementById('new-notes').addEventListener('keydown', e => { if(e.key==='Enter') addTask(); });
+// textarea: Enter adds new line naturally; Cmd/Ctrl+Enter submits
+document.getElementById('new-notes').addEventListener('keydown', e => { if(e.key==='Enter' && (e.metaKey||e.ctrlKey)) addTask(); });
 </script>
 </body>
 </html>
