@@ -1,32 +1,59 @@
 import { kv } from '@vercel/kv';
 
 export default async function handler(req, res) {
-  // Allow Vercel cron calls (GET) or manual triggers with secret
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   const webhookUrl = process.env.SLACK_WEBHOOK_URL;
   if (!webhookUrl) return res.status(500).json({ error: 'SLACK_WEBHOOK_URL not configured' });
 
   try {
-    // Fetch tasks from KV
     const tasks = await kv.get('tasks') ?? [];
 
-    // Today's date in Eastern Time
+    // Eastern Time date helpers
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     const dayName = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'long' });
     const displayDate = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'long', month: 'long', day: 'numeric' });
 
-    // Categorize tasks
+    function fmtDate(dateStr) {
+      if (!dateStr) return null;
+      const d = new Date(dateStr + 'T00:00:00');
+      const diff = Math.round((d - new Date(today + 'T00:00:00')) / 86400000);
+      if (diff < -1) return `${Math.abs(diff)} days ago`;
+      if (diff === -1) return 'yesterday';
+      if (diff === 0) return 'today';
+      if (diff === 1) return 'tomorrow';
+      if (diff < 7) return `in ${diff} days`;
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+
+    // --- Section 0: Overdue (one-time tasks past their deadline) ---
     const overdue = tasks.filter(t =>
-      t.recurrence === 'none' && t.due && t.due < today && t.status !== 'done'
-    );
-    const dueToday = tasks.filter(t =>
-      t.recurrence === 'none' && t.due && t.due === today && t.status !== 'done'
-    );
+      t.recurrence === 'none' && t.due && t.due < today && t.status !== 'done' && !t.paused
+    ).sort((a, b) => a.due.localeCompare(b.due));
+
+    // --- Section 1: Due today (recurring + one-time) ---
+    const dueToday = tasks.filter(t => {
+      if (t.status === 'done' || t.paused) return false;
+      if (t.recurrence === 'none') return t.due === today;
+      // Recurring: due date is today or overdue (not yet logged today)
+      return t.due && t.due <= today;
+    });
+
+    // --- Section 2: Open one-time tasks with deadlines ---
+    const openOnetime = tasks.filter(t =>
+      t.recurrence === 'none' &&
+      t.status !== 'done' &&
+      !t.paused
+    ).sort((a, b) => {
+      // Sort: overdue first, then by due date, then no date last
+      if (!a.due && !b.due) return 0;
+      if (!a.due) return 1;
+      if (!b.due) return -1;
+      return a.due.localeCompare(b.due);
+    });
+
+    // --- Section 3: In-progress tasks ---
     const inProgress = tasks.filter(t => t.status === 'in-progress' && !t.paused);
-    const recurringDue = tasks.filter(t =>
-      t.recurrence !== 'none' && !t.paused && t.due && t.due <= today && t.status !== 'done'
-    );
 
     // Day-based greeting
     const greetings = {
@@ -42,69 +69,82 @@ export default async function handler(req, res) {
     // Header
     blocks.push({
       type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `${greetings[dayName] || 'Good morning, Mildred!'}\n*${displayDate}*`
-      }
+      text: { type: 'mrkdwn', text: `${greetings[dayName] || 'Good morning, Mildred!'}\n*${displayDate}*` }
     });
 
-    blocks.push({ type: 'divider' });
-
-    // Overdue
+    // Section 0 — Overdue
     if (overdue.length > 0) {
-      const list = overdue.slice(0, 3).map(t => `• ${t.name}`).join('\n');
-      const extra = overdue.length > 3 ? `\n_+${overdue.length - 3} more_` : '';
+      const list = overdue.map(t => `• ${t.name} — _${fmtDate(t.due)}_`).join('\n');
       blocks.push({
         type: 'section',
-        text: { type: 'mrkdwn', text: `⚠️ *Overdue (${overdue.length})*\n${list}${extra}` }
+        text: { type: 'mrkdwn', text: `⚠️ *Overdue — ${overdue.length} task${overdue.length !== 1 ? 's' : ''}*\n${list}` }
       });
+      blocks.push({ type: 'divider' });
     }
 
-    // Due today
+    // Section 1 — Due today
     if (dueToday.length > 0) {
-      const list = dueToday.map(t => `• ${t.name}`).join('\n');
+      const list = dueToday.map(t => {
+        const tag = t.recurrence !== 'none' ? ` _(${t.recurrence})_` : '';
+        return `• ${t.name}${tag}`;
+      }).join('\n');
       blocks.push({
         type: 'section',
-        text: { type: 'mrkdwn', text: `📍 *Due today (${dueToday.length})*\n${list}` }
-      });
-    }
-
-    // In progress
-    if (inProgress.length > 0) {
-      const list = inProgress.slice(0, 3).map(t => `• ${t.name}`).join('\n');
-      blocks.push({
-        type: 'section',
-        text: { type: 'mrkdwn', text: `▶️ *In progress*\n${list}` }
-      });
-    }
-
-    // Recurring due
-    if (recurringDue.length > 0) {
-      const list = recurringDue.slice(0, 3).map(t => `• ${t.name} _(${t.recurrence})_`).join('\n');
-      blocks.push({
-        type: 'section',
-        text: { type: 'mrkdwn', text: `🔁 *Recurring tasks up today*\n${list}` }
-      });
-    }
-
-    // All clear
-    if (overdue.length === 0 && dueToday.length === 0 && recurringDue.length === 0) {
-      blocks.push({
-        type: 'section',
-        text: { type: 'mrkdwn', text: `✨ *Nothing urgent today* — great time to get ahead or tackle something from your backlog.` }
+        text: { type: 'mrkdwn', text: `📍 *Due today — ${dueToday.length} task${dueToday.length !== 1 ? 's' : ''}*\n${list}` }
       });
     } else {
-      // Priority question
-      const hasMeetings = false; // no calendar access in cron — kept simple
       blocks.push({
         type: 'section',
-        text: { type: 'mrkdwn', text: `💬 *What's your #1 priority this morning?*` }
+        text: { type: 'mrkdwn', text: `📍 *Due today* — nothing scheduled, you're ahead!` }
       });
     }
 
     blocks.push({ type: 'divider' });
 
-    // Footer with link
+    // Section 2 — Open one-time tasks
+    if (openOnetime.length > 0) {
+      const list = openOnetime.map(t => {
+        if (!t.due) return `• ${t.name} — _no deadline_`;
+        const rel = fmtDate(t.due);
+        const isOverdue = t.due < today;
+        return `• ${t.name} — ${isOverdue ? `⚠️ _${rel}_` : `_${rel}_`}`;
+      }).join('\n');
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `📋 *Open tasks — ${openOnetime.length}*\n${list}` }
+      });
+    } else {
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `📋 *Open tasks* — all clear! ✨` }
+      });
+    }
+
+    blocks.push({ type: 'divider' });
+
+    // Section 3 — In progress
+    if (inProgress.length > 0) {
+      const list = inProgress.map(t => {
+        const subs = t.subtasks || [];
+        const subNote = subs.length > 0
+          ? ` _(${subs.filter(s => s.done).length}/${subs.length} subtasks)_`
+          : '';
+        return `• ${t.name}${subNote}`;
+      }).join('\n');
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `▶️ *In progress — ${inProgress.length}*\n${list}` }
+      });
+    } else {
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `▶️ *In progress* — nothing started yet today.` }
+      });
+    }
+
+    blocks.push({ type: 'divider' });
+
+    // Footer
     blocks.push({
       type: 'section',
       text: { type: 'mrkdwn', text: `🔗 <https://task-tracker-e4xp.vercel.app|Open Task Tracker>` }
@@ -125,7 +165,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, sent: true, date: today });
 
   } catch (e) {
-    // Fallback: send a plain message if something goes wrong
     try {
       await fetch(webhookUrl, {
         method: 'POST',
