@@ -481,13 +481,15 @@
 
     <!-- Filters -->
     <div class="filters">
-      <button class="filter-btn active" onclick="setFilter('all',this)">All</button>
+      <button class="filter-btn" onclick="setFilter('all',this)">All</button>
       <button class="filter-btn" onclick="setFilter('one-time',this)">📌 One-time</button>
       <button class="filter-btn" onclick="setFilter('daily',this)">🔁 Daily</button>
       <button class="filter-btn" onclick="setFilter('weekly',this)">📅 Weekly</button>
       <button class="filter-btn" onclick="setFilter('monthly',this)">🗓 Monthly</button>
       <button class="filter-btn" onclick="setFilter('overdue',this)">⚠️ Overdue</button>
-      <button class="filter-btn" onclick="setFilter('bydate',this)">📆 By Date</button>
+      <button class="filter-btn active" onclick="setFilter('bydate',this)">📆 By Date</button>
+      <button class="filter-btn" onclick="setFilter('done',this)">✅ Done</button>
+      <button class="filter-btn" onclick="setFilter('paused',this)">⏸ Paused</button>
       <div class="filters-right">
         <select class="sort-select" id="sort-select" onchange="render()">
           <option value="due">Sort: Due date</option>
@@ -503,7 +505,7 @@
 
 <script>
 let tasks = [];
-let filter = 'all';
+let filter = 'bydate';
 let secret = '';
 let newTaskType = 'none';
 let saveTimer = null;
@@ -578,7 +580,10 @@ function selectType(type, btn) {
 }
 
 // --- Date helpers ---
-function today() { return new Date().toISOString().split('T')[0]; }
+function today() {
+  // Always use Eastern Time (handles EST/EDT automatically)
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+}
 function isOverdue(t)  { return t.recurrence==='none' && t.due && t.due < today() && t.status !== 'done'; }
 function isDueToday(t) { return t.recurrence==='none' && t.due && t.due === today() && t.status !== 'done'; }
 
@@ -798,6 +803,8 @@ function getFiltered() {
   else if (filter === 'weekly')  arr = arr.filter(t => t.recurrence === 'weekly');
   else if (filter === 'monthly') arr = arr.filter(t => t.recurrence === 'monthly');
   else if (filter === 'overdue') arr = arr.filter(t => isOverdue(t));
+  else if (filter === 'done')   arr = arr.filter(t => t.status === 'done');
+  else if (filter === 'paused') arr = arr.filter(t => !!t.paused);
   return getSorted(arr);
 }
 
