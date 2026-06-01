@@ -313,6 +313,45 @@
     .subtask-input { flex: 1; padding: 5px 9px; font-size: 0.8rem; border: 1.5px solid var(--border); border-radius: 6px; min-width: 0; }
     .subtask-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px rgba(99,102,241,0.1); }
 
+    /* ── Confirm bar ── */
+    .confirm-bar {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      margin-top: 10px; padding: 10px 12px;
+      background: var(--warn-light); border: 1px solid #fcd34d;
+      border-radius: 8px; font-size: 0.82rem;
+      animation: slideUp 0.15s ease;
+    }
+    .confirm-bar span { flex: 1; color: var(--text); }
+
+    /* ── Undo toast ── */
+    #undo-toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: #1f2937; color: white;
+      display: flex; align-items: center; gap: 12px;
+      padding: 13px 18px; border-radius: 12px;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.22);
+      font-size: 0.85rem; z-index: 999; min-width: 280px;
+      animation: toastIn 0.22s ease;
+      overflow: hidden;
+    }
+    #undo-toast .toast-msg { flex: 1; }
+    #undo-toast .toast-undo {
+      background: white; color: #1f2937; border: none;
+      padding: 5px 13px; border-radius: 6px; font-weight: 700;
+      cursor: pointer; font-size: 0.8rem; white-space: nowrap;
+      transition: background 0.15s;
+    }
+    #undo-toast .toast-undo:hover { background: #e5e7eb; }
+    .toast-bar {
+      position: absolute; bottom: 0; left: 0;
+      height: 3px; width: 100%; background: rgba(255,255,255,0.3);
+      border-radius: 0 0 12px 12px;
+      transition: width 5s linear;
+    }
+    @keyframes toastIn { from { opacity:0; transform: translateX(-50%) translateY(12px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }
+    @keyframes toastOut { to { opacity:0; transform: translateX(-50%) translateY(12px); } }
+    .toast-leaving { animation: toastOut 0.25s ease forwards; }
+
     /* ── Agenda strip ── */
     .agenda-strip {
       background: linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%);
@@ -581,8 +620,14 @@ function selectType(type, btn) {
 
 // --- Date helpers ---
 function today() {
-  // Always use Eastern Time (handles EST/EDT automatically)
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  // Before 5am ET, treat it as still being the previous day
+  const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const et = new Date(etStr);
+  if (et.getHours() < 5) et.setDate(et.getDate() - 1);
+  const y = et.getFullYear();
+  const m = String(et.getMonth() + 1).padStart(2, '0');
+  const d = String(et.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 function isOverdue(t)  { return t.recurrence==='none' && t.due && t.due < today() && t.status !== 'done'; }
 function isDueToday(t) { return t.recurrence==='none' && t.due && t.due === today() && t.status !== 'done'; }
@@ -676,20 +721,90 @@ function toggleDone(id) {
   const t = tasks.find(t => t.id === id);
   if (!t) return;
   if (t.recurrence !== 'none') {
-    t.lastCompleted = today(); t.status = 'todo';
-    t.due = nextDueDate(t.recurrence, t.weekDay, t.monthDay, t.dailyType);
-    const card = document.querySelector(`[data-id="${id}"]`);
-    if (card) {
-      const badge = document.createElement('span');
-      badge.className = 'badge badge-logged'; badge.textContent = '✓ Logged!';
-      card.querySelector('.task-title-row').appendChild(badge);
-      setTimeout(() => badge.remove(), 2000);
-    }
-  } else {
-    t.status = t.status === 'done' ? 'todo' : 'done';
+    // Show inline confirm instead of immediately logging
+    showRecurringConfirm(id);
+    return;
   }
+  t.status = t.status === 'done' ? 'todo' : 'done';
   debouncedSave();
-  if (t.recurrence === 'none') render(); else updateStats();
+  render();
+}
+
+function showRecurringConfirm(id) {
+  const t = tasks.find(t => t.id === id);
+  if (!t) return;
+  // Remove any existing confirm bars
+  document.querySelectorAll('.confirm-bar').forEach(el => el.remove());
+  const card = document.querySelector(`[data-id="${id}"]`);
+  if (!card) return;
+  const bar = document.createElement('div');
+  bar.className = 'confirm-bar';
+  bar.innerHTML = `
+    <span>Log <strong>${esc(t.name)}</strong> as done today?</span>
+    <button class="btn btn-primary btn-sm" onclick="confirmDone('${id}')">✓ Yes, log it</button>
+    <button class="btn btn-ghost btn-sm" onclick="cancelConfirm()">Cancel</button>
+  `;
+  card.appendChild(bar);
+}
+
+function cancelConfirm() {
+  document.querySelectorAll('.confirm-bar').forEach(el => el.remove());
+}
+
+let undoTimer = null;
+
+function confirmDone(id) {
+  cancelConfirm();
+  const t = tasks.find(t => t.id === id);
+  if (!t) return;
+  // Snapshot for undo
+  const snap = { due: t.due, lastCompleted: t.lastCompleted, status: t.status };
+  // Log completion
+  t.lastCompleted = today();
+  t.status = 'todo';
+  t.due = nextDueDate(t.recurrence, t.weekDay, t.monthDay, t.dailyType);
+  debouncedSave();
+  updateStats();
+  showUndoToast(id, snap, t.name);
+}
+
+function showUndoToast(id, snap, name) {
+  const existing = document.getElementById('undo-toast');
+  if (existing) existing.remove();
+  if (undoTimer) clearTimeout(undoTimer);
+
+  const toast = document.createElement('div');
+  toast.id = 'undo-toast';
+  toast.innerHTML = `
+    <span class="toast-msg">✓ <strong>${esc(name)}</strong> logged</span>
+    <button class="toast-undo" onclick="undoDone('${id}', ${JSON.stringify(snap).split('"').join('&quot;')})">Undo</button>
+    <div class="toast-bar" id="toast-bar"></div>
+  `;
+  document.body.appendChild(toast);
+  // Animate progress bar shrinking
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const bar = document.getElementById('toast-bar');
+      if (bar) bar.style.width = '0%';
+    });
+  });
+  undoTimer = setTimeout(() => {
+    toast.classList.add('toast-leaving');
+    setTimeout(() => toast.remove(), 280);
+  }, 5000);
+}
+
+function undoDone(id, snap) {
+  if (undoTimer) clearTimeout(undoTimer);
+  const toast = document.getElementById('undo-toast');
+  if (toast) { toast.classList.add('toast-leaving'); setTimeout(() => toast.remove(), 280); }
+  const t = tasks.find(t => t.id === id);
+  if (!t) return;
+  t.due = snap.due || null;
+  t.lastCompleted = snap.lastCompleted || null;
+  t.status = snap.status || 'todo';
+  debouncedSave();
+  render();
 }
 
 function pauseTask(id) {
