@@ -566,6 +566,7 @@ async function tryAuth() {
     tasks = await res.json();
     secret = val;
     localStorage.setItem('tasks_secret', val);
+    autoAdvanceRecurring(); // fix stale due dates before first render
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     setSyncState('ok', 'Synced');
@@ -634,8 +635,8 @@ function isDueToday(t) { return t.recurrence==='none' && t.due && t.due === toda
 
 function relativeDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
-  const now = new Date(); now.setHours(0,0,0,0);
-  const diff = Math.round((d - now) / 86400000);
+  const base = new Date(today() + 'T00:00:00'); // ET-aware today
+  const diff = Math.round((d - base) / 86400000);
   if (diff === 0) return 'Today';
   if (diff === 1) return 'Tomorrow';
   if (diff === -1) return 'Yesterday';
@@ -645,7 +646,8 @@ function relativeDate(dateStr) {
 }
 
 function nextDueDate(recurrence, weekDay, monthDay, dailyType) {
-  const d = new Date();
+  // Start from ET-aware today at noon — avoids toISOString() UTC date shift
+  const d = new Date(today() + 'T12:00:00');
   if (recurrence === 'daily') {
     d.setDate(d.getDate() + 1);
     if (dailyType === 'weekdays') {
@@ -667,7 +669,11 @@ function nextDueDate(recurrence, weekDay, monthDay, dailyType) {
       else { d.setDate(1); d.setMonth(d.getMonth() + 1); d.setDate(md); }
     } else { d.setMonth(d.getMonth() + 1); }
   }
-  return d.toISOString().split('T')[0];
+  // Return local date components (no toISOString to avoid UTC shift)
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
 }
 
 const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -678,10 +684,26 @@ function ordinal(n) {
 }
 function daysSince(dateStr) {
   if (!dateStr) return null;
-  const diff = Math.floor((new Date() - new Date(dateStr + 'T00:00:00')) / 86400000);
+  const base = new Date(today() + 'T00:00:00'); // ET-aware today
+  const diff = Math.floor((base - new Date(dateStr + 'T00:00:00')) / 86400000);
   if (diff === 0) return 'today';
   if (diff === 1) return 'yesterday';
   return diff + ' days ago';
+}
+
+// Auto-advance recurring tasks whose due dates are stale (past) — sets them to today
+// so they show in the "Today" section rather than accumulating as fake-overdue
+function autoAdvanceRecurring() {
+  const todayStr = today();
+  let changed = false;
+  tasks.forEach(t => {
+    if (t.recurrence === 'none' || t.paused || !t.due) return;
+    if (t.due < todayStr) {
+      t.due = todayStr; // reset to today; advances to next occurrence when user logs it
+      changed = true;
+    }
+  });
+  if (changed) debouncedSave();
 }
 
 // --- Task CRUD ---
@@ -752,6 +774,7 @@ function cancelConfirm() {
 }
 
 let undoTimer = null;
+let undoSnap  = null; // stores { id, snap } for undo — avoids JSON-in-onclick fragility
 
 function confirmDone(id) {
   cancelConfirm();
@@ -772,12 +795,13 @@ function showUndoToast(id, snap, name) {
   const existing = document.getElementById('undo-toast');
   if (existing) existing.remove();
   if (undoTimer) clearTimeout(undoTimer);
+  undoSnap = { id, snap }; // stored at module level — no JSON-in-onclick needed
 
   const toast = document.createElement('div');
   toast.id = 'undo-toast';
   toast.innerHTML = `
     <span class="toast-msg">✓ <strong>${esc(name)}</strong> logged</span>
-    <button class="toast-undo" onclick="undoDone('${id}', ${JSON.stringify(snap).split('"').join('&quot;')})">Undo</button>
+    <button class="toast-undo" onclick="undoDone()">Undo</button>
     <div class="toast-bar" id="toast-bar"></div>
   `;
   document.body.appendChild(toast);
@@ -790,11 +814,15 @@ function showUndoToast(id, snap, name) {
   });
   undoTimer = setTimeout(() => {
     toast.classList.add('toast-leaving');
+    undoSnap = null;
     setTimeout(() => toast.remove(), 280);
   }, 5000);
 }
 
-function undoDone(id, snap) {
+function undoDone() {
+  if (!undoSnap) return;
+  const { id, snap } = undoSnap;
+  undoSnap = null;
   if (undoTimer) clearTimeout(undoTimer);
   const toast = document.getElementById('undo-toast');
   if (toast) { toast.classList.add('toast-leaving'); setTimeout(() => toast.remove(), 280); }
@@ -1075,7 +1103,7 @@ function renderSection(title, colorClass, icon, arr) {
 
 function updateStats() {
   const overdue = tasks.filter(t => isOverdue(t)).length;
-  const active  = tasks.filter(t => t.status !== 'done').length;
+  const active  = tasks.filter(t => t.status !== 'done' && !t.paused).length;
   const oneTime = tasks.filter(t => t.recurrence === 'none');
   const done    = oneTime.filter(t => t.status === 'done').length;
   const pct     = oneTime.length ? Math.round((done / oneTime.length) * 100) : 0;
@@ -1088,11 +1116,20 @@ function updateStats() {
 
 function renderByDate() {
   const todayStr = today();
-  const in7 = new Date(); in7.setDate(in7.getDate() + 7);
-  const in7Str = in7.toISOString().split('T')[0];
+  // ET-aware +7 days (no toISOString to avoid UTC date shift)
+  const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const et7 = new Date(etStr);
+  if (et7.getHours() < 5) et7.setDate(et7.getDate() - 1);
+  et7.setDate(et7.getDate() + 7);
+  const in7Str = `${et7.getFullYear()}-${String(et7.getMonth()+1).padStart(2,'0')}-${String(et7.getDate()).padStart(2,'0')}`;
   const active = tasks.filter(t => t.status !== 'done' && !t.paused && matchesSearch(t));
-  const overdue  = getSorted(active.filter(t => t.due && t.due < todayStr));
-  const dueToday = getSorted(active.filter(t => t.due && t.due === todayStr));
+  // Only one-time tasks can be "overdue" — recurring tasks with past due dates go to Today
+  const overdue  = getSorted(active.filter(t => t.recurrence === 'none' && t.due && t.due < todayStr));
+  // Today: one-time due today + recurring tasks due today OR in the past (treat as due today)
+  const dueToday = getSorted(active.filter(t => {
+    if (t.recurrence === 'none') return t.due && t.due === todayStr;
+    return t.due && t.due <= todayStr;
+  }));
   const thisWeek = getSorted(active.filter(t => t.due && t.due > todayStr && t.due <= in7Str));
   const later    = getSorted(active.filter(t => t.due && t.due > in7Str));
   const noDate   = getSorted(active.filter(t => !t.due));
