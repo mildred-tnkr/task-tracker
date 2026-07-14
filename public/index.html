@@ -392,16 +392,19 @@
     .calendar-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
     .calendar-month-label { font-size: 1rem; font-weight: 700; letter-spacing: -0.02em; flex: 1; text-align: center; }
     .calendar-grid {
-      display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 16px;
+      display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-bottom: 16px;
+      width: 100%;
     }
     .cal-daylabel {
       font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
       color: var(--text-muted); text-align: center; padding: 4px 0 8px;
+      min-width: 0;
     }
     .calendar-cell {
       background: var(--card); border: 1.5px solid var(--border); border-radius: 10px;
       padding: 6px; min-height: 78px; cursor: pointer; transition: all var(--t);
       display: flex; flex-direction: column; gap: 3px;
+      min-width: 0; overflow: hidden; box-sizing: border-box;
     }
     .calendar-cell:hover { border-color: #c7cdd8; box-shadow: var(--shadow-sm); }
     .calendar-cell.other-month { opacity: 0.35; cursor: default; }
@@ -410,10 +413,11 @@
     .calendar-cell.cal-selected { box-shadow: 0 0 0 2px var(--accent); }
     .cal-daynum { font-size: 0.76rem; font-weight: 600; color: var(--text-muted); }
     .cal-today .cal-daynum { color: var(--accent); }
-    .cal-chips { display: flex; flex-direction: column; gap: 2px; }
+    .cal-chips { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     .cal-chip {
       font-size: 0.62rem; font-weight: 600; padding: 1px 5px; border-radius: 5px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      min-width: 0; max-width: 100%; box-sizing: border-box; display: block;
     }
     .cal-chip-none     { background: var(--accent-light); color: var(--accent); }
     .cal-chip-daily    { background: var(--teal-light); color: var(--teal); }
