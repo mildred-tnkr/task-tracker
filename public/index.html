@@ -388,6 +388,50 @@
     .agenda-empty { font-size: 0.78rem; color: var(--text-muted); font-style: italic; }
     .agenda-stale { font-size: 0.69rem; color: var(--text-light); margin-left: auto; font-style: italic; }
 
+    /* ── Calendar view ── */
+    .calendar-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .calendar-month-label { font-size: 1rem; font-weight: 700; letter-spacing: -0.02em; flex: 1; text-align: center; }
+    .calendar-grid {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 16px;
+    }
+    .cal-daylabel {
+      font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--text-muted); text-align: center; padding: 4px 0 8px;
+    }
+    .calendar-cell {
+      background: var(--card); border: 1.5px solid var(--border); border-radius: 10px;
+      padding: 6px; min-height: 78px; cursor: pointer; transition: all var(--t);
+      display: flex; flex-direction: column; gap: 3px;
+    }
+    .calendar-cell:hover { border-color: #c7cdd8; box-shadow: var(--shadow-sm); }
+    .calendar-cell.other-month { opacity: 0.35; cursor: default; }
+    .calendar-cell.other-month:hover { border-color: var(--border); box-shadow: none; }
+    .calendar-cell.cal-today { border-color: var(--accent); background: var(--accent-light); }
+    .calendar-cell.cal-selected { box-shadow: 0 0 0 2px var(--accent); }
+    .cal-daynum { font-size: 0.76rem; font-weight: 600; color: var(--text-muted); }
+    .cal-today .cal-daynum { color: var(--accent); }
+    .cal-chips { display: flex; flex-direction: column; gap: 2px; }
+    .cal-chip {
+      font-size: 0.62rem; font-weight: 600; padding: 1px 5px; border-radius: 5px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .cal-chip-none     { background: var(--accent-light); color: var(--accent); }
+    .cal-chip-daily    { background: var(--teal-light); color: var(--teal); }
+    .cal-chip-weekly   { background: var(--purple-light); color: var(--purple); }
+    .cal-chip-biweekly { background: var(--pink-light); color: var(--pink); }
+    .cal-chip-monthly  { background: var(--orange-light); color: var(--orange); }
+    .cal-more { font-size: 0.62rem; color: var(--text-light); padding: 1px 5px; }
+    #calendar-detail { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+    .cal-detail-header { font-size: 0.85rem; font-weight: 700; margin-bottom: 10px; }
+    .cal-detail-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); }
+    .cal-detail-row:first-of-type { border-top: none; }
+    .cal-detail-name { flex: 1; font-size: 0.85rem; }
+    .badge-onetime { background: var(--accent-light); color: var(--accent); }
+    @media (max-width: 640px) {
+      .calendar-cell { min-height: 56px; padding: 4px; }
+      .cal-chip { font-size: 0; height: 6px; padding: 0; border-radius: 3px; margin-top: 1px; }
+    }
+
     /* Empty states */
     .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); }
     .empty-state .emoji { font-size: 2.2rem; margin-bottom: 10px; }
@@ -557,6 +601,7 @@
       <button class="filter-btn" onclick="setFilter('monthly',this)">🗓 Monthly</button>
       <button class="filter-btn" onclick="setFilter('overdue',this)">⚠️ Overdue</button>
       <button class="filter-btn active" onclick="setFilter('bydate',this)">📆 By Date</button>
+      <button class="filter-btn" onclick="setFilter('calendar',this)">🗓️ Calendar</button>
       <button class="filter-btn" onclick="setFilter('done',this)">✅ Done</button>
       <button class="filter-btn" onclick="setFilter('paused',this)">⏸ Paused</button>
       <div class="filters-right">
@@ -568,6 +613,7 @@
       </div>
     </div>
 
+    <div id="calendar-container" style="display:none"></div>
     <div id="task-list-container"></div>
   </div>
 </div>
@@ -665,6 +711,34 @@ function today() {
 function isOverdue(t)  { return t.recurrence==='none' && t.due && t.due < today() && t.status !== 'done'; }
 function isDueToday(t) { return t.recurrence==='none' && t.due && t.due === today() && t.status !== 'done'; }
 function isExpired(t)  { return t.recurrence !== 'none' && !!t.endDate && t.endDate < today(); }
+
+// Does task t land on calendar date dateStr ("YYYY-MM-DD")? Pure calendar math off the
+// task's recurrence rule (weekDay/monthDay/anchor) — independent of the single mutable
+// `due` field, so past/future months render correctly regardless of what's been logged.
+function occursOn(t, dateStr) {
+  if (t.paused || isExpired(t)) return false;
+  if (t.recurrence === 'none') return t.status !== 'done' && t.due === dateStr;
+  if (t.created && dateStr < t.created.slice(0, 10)) return false;
+  if (t.endDate && dateStr > t.endDate) return false;
+  const d = new Date(dateStr + 'T12:00:00');
+  if (t.recurrence === 'daily') {
+    if (t.dailyType === 'weekdays') { const wd = d.getDay(); return wd !== 0 && wd !== 6; }
+    return true;
+  }
+  if (t.recurrence === 'weekly') return t.weekDay != null && d.getDay() === parseInt(t.weekDay);
+  if (t.recurrence === 'biweekly') {
+    if (!t.anchor) return false;
+    const diffDays = Math.round((d - new Date(t.anchor + 'T12:00:00')) / 86400000);
+    return diffDays >= 0 && diffDays % 14 === 0;
+  }
+  if (t.recurrence === 'monthly') {
+    if (t.monthDay == null) return false;
+    const md = parseInt(t.monthDay);
+    if (md === 0) return d.getDate() === new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    return d.getDate() === md;
+  }
+  return false;
+}
 
 function relativeDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
@@ -1267,9 +1341,119 @@ function renderByDate() {
     `<div class="empty-state"><div class="emoji">✨</div><h3>All clear!</h3><p>Nothing active. Great work.</p></div>`;
 }
 
+// --- Calendar view ---
+let calMonth = null;       // Date at the 1st of the currently-displayed month
+let selectedCalDay = null; // "YYYY-MM-DD" currently shown in the detail panel
+
+function startOfMonthET() {
+  const [y, m] = today().split('-').map(Number);
+  return new Date(y, m - 1, 1);
+}
+
+function calNavMonth(delta) {
+  if (!calMonth) calMonth = startOfMonthET();
+  calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + delta, 1);
+  renderCalendar();
+}
+function calGoToday() { calMonth = startOfMonthET(); selectedCalDay = today(); renderCalendar(); }
+
+function tasksOn(dateStr) {
+  return tasks.filter(t => occursOn(t, dateStr))
+    .sort((a, b) => (a.pingTime || a.suggestedTime || '').localeCompare(b.pingTime || b.suggestedTime || ''));
+}
+
+function selectCalDay(dateStr) {
+  selectedCalDay = dateStr;
+  document.querySelectorAll('.calendar-cell').forEach(el => el.classList.remove('cal-selected'));
+  const cell = document.querySelector(`[data-cal-date="${dateStr}"]`);
+  if (cell) cell.classList.add('cal-selected');
+  renderCalDetail(dateStr);
+}
+
+function renderCalDetail(dateStr) {
+  const detail = document.getElementById('calendar-detail');
+  if (!detail) return;
+  const dayTasks = tasksOn(dateStr);
+  const label = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  if (!dayTasks.length) {
+    detail.innerHTML = `<div class="cal-detail-header">${label}</div><div class="empty-state" style="padding:16px"><p>Nothing scheduled.</p></div>`;
+    return;
+  }
+  const rows = dayTasks.map(t => {
+    const recLabel = t.recurrence === 'none' ? 'onetime' : t.recurrence;
+    return `<div class="cal-detail-row">
+      <span class="badge badge-${recLabel}">${t.recurrence === 'none' ? 'one-time' : t.recurrence}</span>
+      <span class="cal-detail-name">${esc(t.name)}</span>
+      ${t.suggestedTime ? `<span class="task-time">🕐 ${esc(t.suggestedTime)}</span>` : ''}
+    </div>`;
+  }).join('');
+  detail.innerHTML = `<div class="cal-detail-header">${label} · ${dayTasks.length} task${dayTasks.length !== 1 ? 's' : ''}</div>${rows}`;
+}
+
+function renderCalendar() {
+  if (!calMonth) calMonth = startOfMonthET();
+  const year = calMonth.getFullYear(), month = calMonth.getMonth();
+  const monthLabel = calMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const startDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const prevMonthDays = new Date(year, month, 0).getDate();
+  const todayStr = today();
+
+  let cells = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="cal-daylabel">${d}</div>`).join('');
+
+  for (let i = 0; i < startDow; i++) {
+    cells += `<div class="calendar-cell other-month"><div class="cal-daynum">${prevMonthDays - startDow + 1 + i}</div></div>`;
+  }
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dayTasks = tasksOn(dateStr);
+    const isToday = dateStr === todayStr;
+    const isSelected = dateStr === selectedCalDay;
+    const chips = dayTasks.slice(0, 3).map(t =>
+      `<div class="cal-chip cal-chip-${t.recurrence}" title="${esc(t.name)}${t.suggestedTime ? ' — ' + esc(t.suggestedTime) : ''}">${esc(t.name)}</div>`
+    ).join('');
+    const more = dayTasks.length > 3 ? `<div class="cal-more">+${dayTasks.length - 3} more</div>` : '';
+    cells += `<div class="calendar-cell ${isToday ? 'cal-today' : ''} ${isSelected ? 'cal-selected' : ''}" data-cal-date="${dateStr}" onclick="selectCalDay('${dateStr}')">
+      <div class="cal-daynum">${day}</div>
+      <div class="cal-chips">${chips}${more}</div>
+    </div>`;
+  }
+  const totalCells = startDow + daysInMonth;
+  const trailing = (7 - (totalCells % 7)) % 7;
+  for (let i = 1; i <= trailing; i++) {
+    cells += `<div class="calendar-cell other-month"><div class="cal-daynum">${i}</div></div>`;
+  }
+
+  document.getElementById('calendar-container').innerHTML = `
+    <div class="calendar-header">
+      <button class="btn btn-ghost btn-sm" onclick="calNavMonth(-1)">‹ Prev</button>
+      <span class="calendar-month-label">${monthLabel}</span>
+      <button class="btn btn-ghost btn-sm" onclick="calNavMonth(1)">Next ›</button>
+      <button class="btn btn-ghost btn-sm" onclick="calGoToday()">Today</button>
+    </div>
+    <div class="calendar-grid">${cells}</div>
+    <div id="calendar-detail"></div>`;
+
+  if (!selectedCalDay || selectedCalDay.slice(0, 7) !== `${year}-${String(month + 1).padStart(2, '0')}`) {
+    selectedCalDay = (year === parseInt(todayStr.slice(0,4)) && month === parseInt(todayStr.slice(5,7))-1) ? todayStr : `${year}-${String(month+1).padStart(2,'0')}-01`;
+  }
+  const cell = document.querySelector(`[data-cal-date="${selectedCalDay}"]`);
+  if (cell) cell.classList.add('cal-selected');
+  renderCalDetail(selectedCalDay);
+}
+
 function render() {
   updateStats();
   const container = document.getElementById('task-list-container');
+  const calContainer = document.getElementById('calendar-container');
+  if (filter === 'calendar') {
+    container.style.display = 'none';
+    calContainer.style.display = 'block';
+    renderCalendar();
+    return;
+  }
+  container.style.display = '';
+  calContainer.style.display = 'none';
   if (filter === 'bydate') { renderByDate(); return; }
   const filtered = getFiltered();
   if (filter !== 'all') {
