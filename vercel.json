@@ -4,6 +4,18 @@
     {
       "path": "/api/notify",
       "schedule": "0 14 * * 1-5"
-    }
+    },
+    { "path": "/api/ping?h=11", "schedule": "0 15 * * *" },
+    { "path": "/api/ping?h=11", "schedule": "0 16 * * *" },
+    { "path": "/api/ping?h=12", "schedule": "0 16 * * *" },
+    { "path": "/api/ping?h=12", "schedule": "0 17 * * *" },
+    { "path": "/api/ping?h=13", "schedule": "0 17 * * *" },
+    { "path": "/api/ping?h=13", "schedule": "0 18 * * *" },
+    { "path": "/api/ping?h=14", "schedule": "0 18 * * *" },
+    { "path": "/api/ping?h=14", "schedule": "0 19 * * *" },
+    { "path": "/api/ping?h=16", "schedule": "0 20 * * *" },
+    { "path": "/api/ping?h=16", "schedule": "0 21 * * *" },
+    { "path": "/api/ping?h=17", "schedule": "0 21 * * *" },
+    { "path": "/api/ping?h=17", "schedule": "0 22 * * *" }
   ]
 }

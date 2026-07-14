@@ -26,6 +26,10 @@ export default async function handler(req, res) {
       return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     }
 
+    // A recurring task whose endDate has passed is treated like paused — it stops
+    // surfacing in the digest but isn't deleted (e.g. "Agents Testing" through Jul 31).
+    const isExpired = t => t.recurrence !== 'none' && !!t.endDate && t.endDate < today;
+
     // --- Section 0: Overdue (one-time tasks past their deadline) ---
     const overdue = tasks.filter(t =>
       t.recurrence === 'none' && t.due && t.due < today && t.status !== 'done' && !t.paused
@@ -33,7 +37,7 @@ export default async function handler(req, res) {
 
     // --- Section 1: Due today (recurring + one-time) ---
     const dueToday = tasks.filter(t => {
-      if (t.status === 'done' || t.paused) return false;
+      if (t.status === 'done' || t.paused || isExpired(t)) return false;
       if (t.recurrence === 'none') return t.due === today;
       // Recurring: due date is today or overdue (not yet logged today)
       return t.due && t.due <= today;
@@ -53,7 +57,7 @@ export default async function handler(req, res) {
     });
 
     // --- Section 3: In-progress tasks ---
-    const inProgress = tasks.filter(t => t.status === 'in-progress' && !t.paused);
+    const inProgress = tasks.filter(t => t.status === 'in-progress' && !t.paused && !isExpired(t));
 
     // Day-based greeting
     const greetings = {
@@ -84,9 +88,17 @@ export default async function handler(req, res) {
 
     // Section 1 — Due today
     if (dueToday.length > 0) {
-      const list = dueToday.map(t => {
+      // Sort by suggested time where available so the digest reads like an hourly agenda
+      const sortedDueToday = [...dueToday].sort((a, b) => {
+        if (!a.suggestedTime && !b.suggestedTime) return 0;
+        if (!a.suggestedTime) return 1;
+        if (!b.suggestedTime) return -1;
+        return a.suggestedTime.localeCompare(b.suggestedTime);
+      });
+      const list = sortedDueToday.map(t => {
         const tag = t.recurrence !== 'none' ? ` _(${t.recurrence})_` : '';
-        return `• ${t.name}${tag}`;
+        const time = t.suggestedTime ? ` — 🕐 ${t.suggestedTime}` : '';
+        return `• ${t.name}${tag}${time}`;
       }).join('\n');
       blocks.push({
         type: 'section',

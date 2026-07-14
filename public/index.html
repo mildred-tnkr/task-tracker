@@ -27,6 +27,8 @@
       --teal-light: #f0fdfa;
       --orange: #f97316;
       --orange-light: #fff7ed;
+      --pink: #ec4899;
+      --pink-light: #fdf2f8;
       --radius: 12px;
       --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
       --shadow: 0 4px 14px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04);
@@ -161,6 +163,7 @@
     .type-tab.active-none  { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
     .type-tab.active-daily { background: var(--teal-light); border-color: var(--teal); color: var(--teal); }
     .type-tab.active-weekly { background: var(--purple-light); border-color: var(--purple); color: var(--purple); }
+    .type-tab.active-biweekly { background: var(--pink-light); border-color: var(--pink); color: var(--pink); }
     .type-tab.active-monthly { background: var(--orange-light); border-color: var(--orange); color: var(--orange); }
 
     /* ── Search ── */
@@ -196,6 +199,7 @@
     .section-title { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
     .section-title.daily   { color: var(--teal); }
     .section-title.weekly  { color: var(--purple); }
+    .section-title.biweekly { color: var(--pink); }
     .section-title.monthly { color: var(--orange); }
     .section-title.independent { color: var(--text-muted); }
     .section-line { flex: 1; height: 1px; background: var(--border); }
@@ -218,6 +222,7 @@
     .task-card.today-card  { border-left: 3px solid var(--warn); }
     .task-card.daily-card  { border-left: 3px solid var(--teal); }
     .task-card.weekly-card { border-left: 3px solid var(--purple); }
+    .task-card.biweekly-card { border-left: 3px solid var(--pink); }
     .task-card.monthly-card { border-left: 3px solid var(--orange); }
     .task-card.paused-card { opacity: 0.42; }
     @keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -238,6 +243,8 @@
     .task-check.daily:hover   { background: var(--teal-light); border-color: var(--teal); }
     .task-check.weekly  { border-color: var(--purple); }
     .task-check.weekly:hover  { background: var(--purple-light); }
+    .task-check.biweekly { border-color: var(--pink); }
+    .task-check.biweekly:hover { background: var(--pink-light); }
     .task-check.monthly { border-color: var(--orange); }
     .task-check.monthly:hover { background: var(--orange-light); }
     @keyframes checkPop { 0%{transform:scale(1)} 45%{transform:scale(1.3)} 100%{transform:scale(1)} }
@@ -256,6 +263,7 @@
     .badge-today   { background: var(--warn-light); color: #b45309; }
     .badge-daily   { background: var(--teal-light); color: var(--teal); }
     .badge-weekly  { background: var(--purple-light); color: var(--purple); }
+    .badge-biweekly { background: var(--pink-light); color: var(--pink); }
     .badge-monthly { background: var(--orange-light); color: var(--orange); }
     .badge-logged  { background: var(--success-light); color: var(--success); animation: badgePop 0.3s ease; }
     .badge-paused  { background: #f3f4f6; color: #6b7280; }
@@ -267,6 +275,9 @@
     .task-due.overdue { color: var(--danger); font-weight: 600; }
     .task-due.today   { color: var(--warn);   font-weight: 600; }
     .task-last { font-size: 0.72rem; color: var(--text-light); font-style: italic; }
+    .task-time { font-size: 0.74rem; color: var(--accent); font-weight: 600; }
+    .task-end { font-size: 0.7rem; color: var(--text-light); font-style: italic; }
+    .task-end.expired { color: var(--danger); font-weight: 600; }
     .task-notes { font-size: 0.78rem; color: var(--text-muted); margin-top: 5px; white-space: pre-wrap; line-height: 1.55; }
 
     .status-cycle {
@@ -433,12 +444,14 @@
     <div class="add-form">
       <div class="add-form-header">
         <span class="add-form-title">Add a task</span>
+        <button class="btn btn-ghost btn-sm" onclick="importWorkTasks()" title="Seed the standard Tenkara work schedule">⚡ Import work tasks</button>
         <span class="kbd" title="Press N to focus">N</span>
       </div>
       <div class="type-tabs" id="type-tabs">
         <button class="type-tab active-none" data-type="none" onclick="selectType('none',this)">📌 One-time</button>
         <button class="type-tab" data-type="daily" onclick="selectType('daily',this)">🔁 Daily</button>
         <button class="type-tab" data-type="weekly" onclick="selectType('weekly',this)">📅 Weekly</button>
+        <button class="type-tab" data-type="biweekly" onclick="selectType('biweekly',this)">🔂 Biweekly</button>
         <button class="type-tab" data-type="monthly" onclick="selectType('monthly',this)">🗓 Monthly</button>
       </div>
       <div class="form-row">
@@ -482,6 +495,22 @@
             <option value="31">31st</option><option value="0">Last day</option>
           </select>
         </div>
+        <div class="form-group" id="biweekly-date-group" style="display:none">
+          <label>First occurrence</label>
+          <input type="date" id="new-biweekly-date" />
+        </div>
+        <div class="form-group" id="time-group">
+          <label>Suggested time</label>
+          <input type="text" id="new-time" placeholder="e.g. 11:00–11:15 AM ET" style="width:150px" />
+        </div>
+        <div class="form-group" id="pingtime-group">
+          <label>Slack ping at (ET, optional)</label>
+          <input type="time" id="new-pingtime" />
+        </div>
+        <div class="form-group" id="enddate-group" style="display:none">
+          <label>End date (optional)</label>
+          <input type="date" id="new-enddate" />
+        </div>
         <div class="form-group">
           <label>Priority</label>
           <select id="new-priority">
@@ -524,6 +553,7 @@
       <button class="filter-btn" onclick="setFilter('one-time',this)">📌 One-time</button>
       <button class="filter-btn" onclick="setFilter('daily',this)">🔁 Daily</button>
       <button class="filter-btn" onclick="setFilter('weekly',this)">📅 Weekly</button>
+      <button class="filter-btn" onclick="setFilter('biweekly',this)">🔂 Biweekly</button>
       <button class="filter-btn" onclick="setFilter('monthly',this)">🗓 Monthly</button>
       <button class="filter-btn" onclick="setFilter('overdue',this)">⚠️ Overdue</button>
       <button class="filter-btn active" onclick="setFilter('bydate',this)">📆 By Date</button>
@@ -617,6 +647,8 @@ function selectType(type, btn) {
   document.getElementById('daily-options-group').style.display = type === 'daily' ? '' : 'none';
   document.getElementById('weekday-group').style.display = type === 'weekly' ? '' : 'none';
   document.getElementById('monthday-group').style.display = type === 'monthly' ? '' : 'none';
+  document.getElementById('biweekly-date-group').style.display = type === 'biweekly' ? '' : 'none';
+  document.getElementById('enddate-group').style.display = type === 'none' ? 'none' : '';
 }
 
 // --- Date helpers ---
@@ -632,6 +664,7 @@ function today() {
 }
 function isOverdue(t)  { return t.recurrence==='none' && t.due && t.due < today() && t.status !== 'done'; }
 function isDueToday(t) { return t.recurrence==='none' && t.due && t.due === today() && t.status !== 'done'; }
+function isExpired(t)  { return t.recurrence !== 'none' && !!t.endDate && t.endDate < today(); }
 
 function relativeDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
@@ -645,7 +678,22 @@ function relativeDate(dateStr) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function nextDueDate(recurrence, weekDay, monthDay, dailyType) {
+function nextDueDate(recurrence, weekDay, monthDay, dailyType, anchor) {
+  // Biweekly is anchor-based (always a multiple of 14 days from the original
+  // first-occurrence date) so it self-corrects and never drifts off its weekday,
+  // no matter when it actually gets logged or re-opened.
+  if (recurrence === 'biweekly') {
+    const a = new Date((anchor || today()) + 'T00:00:00');
+    const base = new Date(today() + 'T00:00:00');
+    const diffDays = Math.round((base - a) / 86400000);
+    let periods = diffDays < 0 ? 0 : Math.floor(diffDays / 14) + 1;
+    const next = new Date(a);
+    next.setDate(next.getDate() + periods * 14);
+    const y = next.getFullYear();
+    const m = String(next.getMonth() + 1).padStart(2, '0');
+    const dd = String(next.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  }
   // Start from ET-aware today at noon — avoids toISOString() UTC date shift
   const d = new Date(today() + 'T12:00:00');
   if (recurrence === 'daily') {
@@ -710,24 +758,39 @@ function autoAdvanceRecurring() {
 function addTask() {
   const name = document.getElementById('new-name').value.trim();
   if (!name) { document.getElementById('new-name').focus(); return; }
-  const weekDay  = newTaskType === 'weekly'  ? parseInt(document.getElementById('new-weekday').value)  : null;
+  let weekDay  = newTaskType === 'weekly'  ? parseInt(document.getElementById('new-weekday').value)  : null;
   const monthDay = newTaskType === 'monthly' ? parseInt(document.getElementById('new-monthday').value) : null;
   const dailyType = newTaskType === 'daily'  ? document.getElementById('new-daily-type').value : null;
-  const initialDue = newTaskType === 'none'
-    ? (document.getElementById('new-due').value || null)
-    : nextDueDate(newTaskType, weekDay, monthDay, dailyType);
+  let anchor = null, initialDue;
+  if (newTaskType === 'none') {
+    initialDue = document.getElementById('new-due').value || null;
+  } else if (newTaskType === 'biweekly') {
+    anchor = document.getElementById('new-biweekly-date').value || today();
+    initialDue = anchor;
+    weekDay = new Date(anchor + 'T12:00:00').getDay();
+  } else {
+    initialDue = nextDueDate(newTaskType, weekDay, monthDay, dailyType);
+  }
+  const suggestedTime = document.getElementById('new-time').value.trim() || null;
+  const pingTime = document.getElementById('new-pingtime').value || null;
+  const endDate = newTaskType === 'none' ? null : (document.getElementById('new-enddate').value || null);
   tasks.unshift({
     id: Date.now().toString(), name,
     due: initialDue,
     priority: document.getElementById('new-priority').value,
     notes: document.getElementById('new-notes').value.replace(/\r\n/g,'\n').trim() || null,
     status: 'todo', recurrence: newTaskType,
-    weekDay, monthDay, dailyType,
+    weekDay, monthDay, dailyType, anchor,
+    suggestedTime, pingTime, endDate,
     lastCompleted: null, subtasks: [],
     created: new Date().toISOString()
   });
   document.getElementById('new-name').value = '';
   document.getElementById('new-due').value = '';
+  document.getElementById('new-biweekly-date').value = '';
+  document.getElementById('new-time').value = '';
+  document.getElementById('new-pingtime').value = '';
+  document.getElementById('new-enddate').value = '';
   document.getElementById('new-priority').value = 'medium';
   document.getElementById('new-notes').value = '';
   debouncedSave(); render();
@@ -737,6 +800,49 @@ function addTask() {
 function deleteTask(id) {
   tasks = tasks.filter(t => t.id !== id);
   debouncedSave(); render();
+}
+
+// --- One-click import of the standard Tenkara work schedule ---
+// Anchor dates for the two biweekly inbox cleanups are fixed calendar dates so they
+// never land on the same day (Vita = Wednesdays, NutriPro = Fridays, forever).
+const WORK_TASK_DEFAULTS = [
+  { name: 'Platform checks', recurrence: 'daily', dailyType: 'everyday', suggestedTime: '11:00–11:15 AM ET', pingTime: '11:00', priority: 'medium' },
+  { name: 'Slack channel check (urgent items)', recurrence: 'daily', dailyType: 'everyday', suggestedTime: '11:15–11:30 AM ET', pingTime: '11:15', priority: 'medium' },
+  { name: 'Checkin: Material & order updates in the platform', recurrence: 'daily', dailyType: 'everyday', suggestedTime: '11:30–11:45 AM ET', pingTime: '11:30', priority: 'medium' },
+  { name: 'Reviewing Suppliers and Quotes in the platform', recurrence: 'daily', dailyType: 'everyday', suggestedTime: '11:45 AM–1:30 PM ET', pingTime: '11:45', priority: 'medium' },
+  { name: 'Agents Testing', recurrence: 'daily', dailyType: 'everyday', suggestedTime: '1:30–5:30 PM ET', pingTime: '13:30', endDate: '2026-07-31', priority: 'high', notes: 'Daily through end of July 2026 (this month only) — revisit whether to continue after that.' },
+  { name: 'Gather channel updates and consolidate on file', recurrence: 'weekly', weekDay: 1, suggestedTime: '11:15–11:45 AM ET', pingTime: '11:15', priority: 'medium', notes: 'Mondays.' },
+  { name: 'EOD reports checking', recurrence: 'weekly', weekDay: 1, suggestedTime: '5:00–5:30 PM ET', pingTime: '17:00', priority: 'medium', notes: 'Mondays.' },
+  { name: 'Tenkara Inbox bug logs and overall checks', recurrence: 'weekly', weekDay: 2, suggestedTime: '4:30 PM ET', pingTime: '16:30', priority: 'medium', notes: 'Tuesdays.' },
+  { name: 'Tenkara Inbox - Quo Flow Updates', recurrence: 'weekly', weekDay: 4, suggestedTime: '11:30 AM–12:00 PM ET', pingTime: '11:30', priority: 'medium', notes: 'Thursdays.' },
+  { name: 'Tenkara Inbox cleanup (Vita Organica)', recurrence: 'biweekly', anchor: '2026-07-15', suggestedTime: '12:00–12:30 PM ET', pingTime: '12:00', priority: 'medium', notes: 'Every other Wednesday — offset from NutriPro so they never land on the same day.' },
+  { name: 'Tenkara Inbox cleanup (NutriPro)', recurrence: 'biweekly', anchor: '2026-07-17', suggestedTime: '12:00–12:30 PM ET', pingTime: '12:00', priority: 'medium', notes: 'Every other Friday — offset from Vita Organica so they never land on the same day.' },
+  { name: 'Quo/Calls Management cleanup', recurrence: 'monthly', monthDay: 10, suggestedTime: '2:00–2:30 PM ET', pingTime: '14:00', priority: 'medium', notes: '10th of every month.' },
+  { name: 'Drive Organization / cleanup', recurrence: 'monthly', monthDay: 15, suggestedTime: '2:00–2:30 PM ET', pingTime: '14:00', priority: 'medium', notes: '15th of every month.' },
+];
+
+function importWorkTasks() {
+  let added = 0;
+  WORK_TASK_DEFAULTS.forEach(d => {
+    if (tasks.some(t => t.name === d.name)) return; // dedupe by name — safe to click again later
+    let due, weekDay = d.weekDay ?? null;
+    if (d.recurrence === 'daily') due = nextDueDate('daily', null, null, d.dailyType);
+    else if (d.recurrence === 'weekly') due = nextDueDate('weekly', d.weekDay, null, null);
+    else if (d.recurrence === 'monthly') due = nextDueDate('monthly', null, d.monthDay, null);
+    else if (d.recurrence === 'biweekly') { due = d.anchor; weekDay = new Date(d.anchor + 'T12:00:00').getDay(); }
+    tasks.unshift({
+      id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+      name: d.name, due, priority: d.priority || 'medium',
+      notes: d.notes || null, status: 'todo', recurrence: d.recurrence,
+      weekDay, monthDay: d.monthDay ?? null, dailyType: d.dailyType ?? null,
+      anchor: d.recurrence === 'biweekly' ? d.anchor : null,
+      suggestedTime: d.suggestedTime || null, pingTime: d.pingTime || null, endDate: d.endDate || null,
+      lastCompleted: null, subtasks: [], created: new Date().toISOString()
+    });
+    added++;
+  });
+  if (added > 0) { debouncedSave(); render(); }
+  alert(added > 0 ? `Imported ${added} task${added !== 1 ? 's' : ''} into your tracker.` : 'All work tasks already exist — nothing to import.');
 }
 
 function toggleDone(id) {
@@ -785,7 +891,7 @@ function confirmDone(id) {
   // Log completion
   t.lastCompleted = today();
   t.status = 'todo';
-  t.due = nextDueDate(t.recurrence, t.weekDay, t.monthDay, t.dailyType);
+  t.due = nextDueDate(t.recurrence, t.weekDay, t.monthDay, t.dailyType, t.anchor);
   debouncedSave();
   updateStats();
   showUndoToast(id, snap, t.name);
@@ -867,6 +973,9 @@ function startEdit(id) {
     <div class="edit-row">
       <div class="form-group" style="flex:1;min-width:150px"><label>Name</label><input type="text" id="en-${id}" value="${esc(t.name)}" /></div>
       ${!isRecurring ? `<div class="form-group"><label>Due date</label><input type="date" id="ed-${id}" value="${t.due||''}" /></div>` : ''}
+      <div class="form-group"><label>Suggested time</label><input type="text" id="et-${id}" value="${esc(t.suggestedTime||'')}" placeholder="e.g. 11:00–11:15 AM ET" style="width:150px" /></div>
+      <div class="form-group"><label>Slack ping at (ET)</label><input type="time" id="epn-${id}" value="${t.pingTime||''}" /></div>
+      ${isRecurring ? `<div class="form-group"><label>End date</label><input type="date" id="ee-${id}" value="${t.endDate||''}" /></div>` : ''}
       <div class="form-group"><label>Priority</label>
         <select id="ep-${id}">
           <option value="high" ${t.priority==='high'?'selected':''}>High</option>
@@ -895,6 +1004,9 @@ function saveEdit(id) {
   if (!t) return;
   t.name = document.getElementById(`en-${id}`).value.trim() || t.name;
   if (t.recurrence === 'none' && document.getElementById(`ed-${id}`)) t.due = document.getElementById(`ed-${id}`).value || null;
+  if (t.recurrence !== 'none' && document.getElementById(`ee-${id}`)) t.endDate = document.getElementById(`ee-${id}`).value || null;
+  t.suggestedTime = document.getElementById(`et-${id}`).value.trim() || null;
+  t.pingTime = document.getElementById(`epn-${id}`).value || null;
   t.priority = document.getElementById(`ep-${id}`).value;
   t.notes = document.getElementById(`eno-${id}`).value.trim() || null;
   debouncedSave(); render();
@@ -944,6 +1056,7 @@ function getFiltered() {
   if (filter === 'one-time') arr = arr.filter(t => t.recurrence === 'none');
   else if (filter === 'daily')   arr = arr.filter(t => t.recurrence === 'daily');
   else if (filter === 'weekly')  arr = arr.filter(t => t.recurrence === 'weekly');
+  else if (filter === 'biweekly') arr = arr.filter(t => t.recurrence === 'biweekly');
   else if (filter === 'monthly') arr = arr.filter(t => t.recurrence === 'monthly');
   else if (filter === 'overdue') arr = arr.filter(t => isOverdue(t));
   else if (filter === 'done')   arr = arr.filter(t => t.status === 'done');
@@ -1021,14 +1134,16 @@ function deleteSubtask(taskId, subId) {
 function renderTask(t) {
   const overdue = isOverdue(t), dueToday = isDueToday(t);
   const isDone = t.status === 'done', rec = t.recurrence, isPaused = !!t.paused;
+  const expired = isExpired(t);
 
   let cardClass = 'task-card';
-  if (isPaused) cardClass += ' paused-card';
+  if (isPaused || expired) cardClass += ' paused-card';
   else if (isDone) cardClass += ' done-card';
   else if (overdue) cardClass += ' overdue-card';
   else if (dueToday) cardClass += ' today-card';
   else if (rec === 'daily') cardClass += ' daily-card';
   else if (rec === 'weekly') cardClass += ' weekly-card';
+  else if (rec === 'biweekly') cardClass += ' biweekly-card';
   else if (rec === 'monthly') cardClass += ' monthly-card';
 
   let checkClass = 'task-check';
@@ -1046,6 +1161,7 @@ function renderTask(t) {
     let sched = '';
     if (rec === 'daily') sched = t.dailyType === 'weekdays' ? 'Weekdays only' : 'Every day';
     else if (rec === 'weekly' && t.weekDay != null) sched = `Every ${DAY_NAMES[t.weekDay]}`;
+    else if (rec === 'biweekly' && t.weekDay != null) sched = `Every other ${DAY_NAMES[t.weekDay]}`;
     else if (rec === 'monthly' && t.monthDay != null) sched = `Every ${ordinal(t.monthDay)}`;
     const fmt = t.due ? relativeDate(t.due) : null;
     dueText = [sched, fmt ? `Next: ${fmt}` : ''].filter(Boolean).join(' · ');
@@ -1055,6 +1171,11 @@ function renderTask(t) {
   const statusLabel = t.status==='todo'?'To Do':t.status==='in-progress'?'In Progress':'Done';
   const recBadge = rec!=='none' ? `<span class="badge badge-${rec}">${rec}</span>` : '';
   const pausedBadge = isPaused ? `<span class="badge badge-paused">⏸ Paused</span>` : '';
+  const timeBadge = t.suggestedTime ? `<span class="task-time">🕐 ${esc(t.suggestedTime)}</span>` : '';
+  const pingBadge = t.pingTime ? `<span class="task-time" title="Slack ping around this hour (Hobby plan can't guarantee the exact minute)">🔔 ${esc(t.pingTime)}</span>` : '';
+  const endBadge = (rec !== 'none' && t.endDate)
+    ? `<span class="task-end${expired ? ' expired' : ''}">${expired ? '⏳ Ended ' : 'Ends '}${t.endDate}</span>` : '';
+  const disabled = isPaused || expired;
   const subs = t.subtasks || [];
   const subsBadge = subs.length > 0
     ? `<span class="badge badge-subs">${subs.filter(s=>s.done).length}/${subs.length}</span>` : '';
@@ -1062,22 +1183,25 @@ function renderTask(t) {
   return `
     <div class="${cardClass}" data-id="${t.id}">
       <div class="${checkClass}"
-        onclick="${isPaused ? '' : `toggleDone('${t.id}')`}"
-        title="${isPaused ? 'Paused — resume to log' : rec!=='none' ? 'Log completion' : 'Toggle done'}"
-        style="${isPaused ? 'cursor:not-allowed;opacity:0.4' : ''}"></div>
+        onclick="${disabled ? '' : `toggleDone('${t.id}')`}"
+        title="${expired ? 'Ended — edit end date to reactivate' : isPaused ? 'Paused — resume to log' : rec!=='none' ? 'Log completion' : 'Toggle done'}"
+        style="${disabled ? 'cursor:not-allowed;opacity:0.4' : ''}"></div>
       <div class="task-body">
         <div class="task-title-row">
           <span class="task-name-text ${isDone?'done-text':''}">${esc(t.name)}</span>
           ${recBadge}${pausedBadge}
           <span class="badge badge-${t.priority}">${t.priority}</span>
-          ${overdue&&!isPaused ? '<span class="badge badge-overdue">Overdue</span>' : ''}
-          ${dueToday&&!isPaused ? '<span class="badge badge-today">Today</span>' : ''}
+          ${overdue&&!disabled ? '<span class="badge badge-overdue">Overdue</span>' : ''}
+          ${dueToday&&!disabled ? '<span class="badge badge-today">Today</span>' : ''}
           ${subsBadge}
         </div>
         <div class="task-meta">
           ${dueText ? `<span class="${dueClass}">${dueText}</span>` : ''}
+          ${timeBadge}
+          ${pingBadge}
+          ${endBadge}
           ${lastDone ? `<span class="task-last">${lastDone}</span>` : ''}
-          ${!isPaused ? `<span class="status-cycle" onclick="cycleStatus('${t.id}')">${statusLabel} →</span>` : ''}
+          ${!disabled ? `<span class="status-cycle" onclick="cycleStatus('${t.id}')">${statusLabel} →</span>` : ''}
         </div>
         ${t.notes ? `<div class="task-notes">${esc(t.notes)}</div>` : ''}
         ${renderSubtasks(t)}
@@ -1103,7 +1227,7 @@ function renderSection(title, colorClass, icon, arr) {
 
 function updateStats() {
   const overdue = tasks.filter(t => isOverdue(t)).length;
-  const active  = tasks.filter(t => t.status !== 'done' && !t.paused).length;
+  const active  = tasks.filter(t => t.status !== 'done' && !t.paused && !isExpired(t)).length;
   const oneTime = tasks.filter(t => t.recurrence === 'none');
   const done    = oneTime.filter(t => t.status === 'done').length;
   const pct     = oneTime.length ? Math.round((done / oneTime.length) * 100) : 0;
@@ -1122,7 +1246,7 @@ function renderByDate() {
   if (et7.getHours() < 5) et7.setDate(et7.getDate() - 1);
   et7.setDate(et7.getDate() + 7);
   const in7Str = `${et7.getFullYear()}-${String(et7.getMonth()+1).padStart(2,'0')}-${String(et7.getDate()).padStart(2,'0')}`;
-  const active = tasks.filter(t => t.status !== 'done' && !t.paused && matchesSearch(t));
+  const active = tasks.filter(t => t.status !== 'done' && !t.paused && !isExpired(t) && matchesSearch(t));
   // Only one-time tasks can be "overdue" — recurring tasks with past due dates go to Today
   const overdue  = getSorted(active.filter(t => t.recurrence === 'none' && t.due && t.due < todayStr));
   // Today: one-time due today + recurring tasks due today OR in the past (treat as due today)
@@ -1154,13 +1278,15 @@ function render() {
       : `<div class="empty-state"><div class="emoji">✨</div><h3>Nothing here</h3><p>No tasks match this filter.</p></div>`;
     return;
   }
-  const daily       = getSorted(tasks.filter(t => t.recurrence === 'daily'   && matchesSearch(t)));
-  const weekly      = getSorted(tasks.filter(t => t.recurrence === 'weekly'  && matchesSearch(t)));
-  const monthly     = getSorted(tasks.filter(t => t.recurrence === 'monthly' && matchesSearch(t)));
-  const independent = getSorted(tasks.filter(t => t.recurrence === 'none'    && matchesSearch(t)));
+  const daily       = getSorted(tasks.filter(t => t.recurrence === 'daily'    && matchesSearch(t)));
+  const weekly      = getSorted(tasks.filter(t => t.recurrence === 'weekly'   && matchesSearch(t)));
+  const biweekly    = getSorted(tasks.filter(t => t.recurrence === 'biweekly' && matchesSearch(t)));
+  const monthly     = getSorted(tasks.filter(t => t.recurrence === 'monthly'  && matchesSearch(t)));
+  const independent = getSorted(tasks.filter(t => t.recurrence === 'none'     && matchesSearch(t)));
   let html = '';
   html += renderSection('Daily',    'daily',       '🔁', daily);
   html += renderSection('Weekly',   'weekly',      '📅', weekly);
+  html += renderSection('Biweekly', 'biweekly',    '🔂', biweekly);
   html += renderSection('Monthly',  'monthly',     '🗓', monthly);
   html += renderSection('One-time', 'independent', '📌', independent);
   container.innerHTML = html ||
