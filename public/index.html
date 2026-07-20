@@ -293,6 +293,8 @@
     .btn-pause:hover  { background: #e5e7eb; }
     .btn-resume { background: var(--accent-light); color: var(--accent); border: 1px solid var(--accent); }
     .btn-resume:hover { background: #dde4fd; }
+    .btn-defer { background: var(--warn-light); color: #b45309; border: 1px solid #fcd34d; }
+    .btn-defer:hover { background: #fef3c7; }
 
     /* Edit form */
     .edit-form { margin-top: 10px; background: var(--bg); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 9px; }
@@ -972,10 +974,25 @@ function confirmDone(id) {
   t.due = nextDueDate(t.recurrence, t.weekDay, t.monthDay, t.dailyType, t.anchor);
   debouncedSave();
   updateStats();
-  showUndoToast(id, snap, t.name);
+  showUndoToast(id, snap, t.name, 'logged');
 }
 
-function showUndoToast(id, snap, name) {
+// Push a recurring task to its next occurrence WITHOUT marking it completed —
+// for "didn't get to it, don't want to falsely log it as done" days. Doesn't
+// touch lastCompleted/status, so it won't show up as a false positive in any
+// completion history/export.
+function deferTask(id) {
+  cancelConfirm();
+  const t = tasks.find(t => t.id === id);
+  if (!t || t.recurrence === 'none') return;
+  const snap = { due: t.due, lastCompleted: t.lastCompleted, status: t.status };
+  t.due = nextDueDate(t.recurrence, t.weekDay, t.monthDay, t.dailyType, t.anchor);
+  debouncedSave();
+  updateStats();
+  showUndoToast(id, snap, t.name, 'deferred to next occurrence');
+}
+
+function showUndoToast(id, snap, name, label) {
   const existing = document.getElementById('undo-toast');
   if (existing) existing.remove();
   if (undoTimer) clearTimeout(undoTimer);
@@ -984,7 +1001,7 @@ function showUndoToast(id, snap, name) {
   const toast = document.createElement('div');
   toast.id = 'undo-toast';
   toast.innerHTML = `
-    <span class="toast-msg">✓ <strong>${esc(name)}</strong> logged</span>
+    <span class="toast-msg">✓ <strong>${esc(name)}</strong> ${label || 'logged'}</span>
     <button class="toast-undo" onclick="undoDone()">Undo</button>
     <div class="toast-bar" id="toast-bar"></div>
   `;
@@ -1285,6 +1302,7 @@ function renderTask(t) {
         ${renderSubtasks(t)}
       </div>
       <div class="task-actions">
+        ${rec!=='none' && !disabled ? `<button class="btn btn-sm btn-defer" onclick="deferTask('${t.id}')" title="Push to the next occurrence without logging it as done">⏭ Defer</button>` : ''}
         ${rec!=='none' ? `<button class="btn btn-sm ${isPaused?'btn-resume':'btn-pause'}" onclick="pauseTask('${t.id}')">${isPaused?'▶ Resume':'⏸ Pause'}</button>` : ''}
         <button class="btn btn-sm btn-ghost" data-edit-id="${t.id}" onclick="startEdit('${t.id}')">Edit</button>
         <button class="btn btn-sm btn-danger" onclick="deleteTask('${t.id}')">✕</button>
