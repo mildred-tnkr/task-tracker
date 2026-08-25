@@ -495,6 +495,7 @@
       <div class="add-form-header">
         <span class="add-form-title">Add a task</span>
         <button class="btn btn-ghost btn-sm" onclick="importWorkTasks()" title="Seed the standard Tenkara work schedule">⚡ Import work tasks</button>
+        <button class="btn btn-ghost btn-sm" id="notif-toggle-btn" onclick="toggleNotifications()" title="Pause/resume the 10am digest and hourly Slack pings">🔔 Notifications: On</button>
         <span class="kbd" title="Press N to focus">N</span>
       </div>
       <div class="type-tabs" id="type-tabs">
@@ -631,6 +632,7 @@ let secret = '';
 let newTaskType = 'none';
 let saveTimer = null;
 let searchQuery = '';
+let notificationsPaused = false;
 const priorityOrder = { high: 0, medium: 1, low: 2 };
 
 // --- Auth ---
@@ -654,9 +656,50 @@ async function tryAuth() {
     setSyncState('ok', 'Synced');
     render();
     loadCalendar();
+    loadSettings();
   } catch(e) {
     document.getElementById('auth-error').textContent = 'Could not connect.';
     setSyncState('error', 'Error');
+  }
+}
+
+// --- Settings (notifications pause switch) ---
+async function loadSettings() {
+  try {
+    const res = await fetch('/api/settings', { headers: { 'x-tasks-secret': secret } });
+    if (!res.ok) return;
+    const data = await res.json();
+    notificationsPaused = !!data.notificationsPaused;
+    updateNotifButton();
+  } catch (e) { /* silently skip if unavailable */ }
+}
+
+function updateNotifButton() {
+  const btn = document.getElementById('notif-toggle-btn');
+  if (!btn) return;
+  btn.textContent = notificationsPaused ? '🔕 Notifications: Paused' : '🔔 Notifications: On';
+  btn.title = notificationsPaused
+    ? 'Slack digest and hourly pings are paused — click to resume'
+    : 'Pause the 10am digest and hourly Slack pings';
+  btn.style.color = notificationsPaused ? '#b45309' : '';
+  btn.style.borderColor = notificationsPaused ? '#fcd34d' : '';
+  btn.style.background = notificationsPaused ? 'var(--warn-light)' : '';
+}
+
+async function toggleNotifications() {
+  notificationsPaused = !notificationsPaused;
+  updateNotifButton();
+  try {
+    await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-tasks-secret': secret },
+      body: JSON.stringify({ notificationsPaused })
+    });
+  } catch (e) {
+    // Revert on failure so the button doesn't lie about the saved state
+    notificationsPaused = !notificationsPaused;
+    updateNotifButton();
+    alert('Could not save that — check your connection and try again.');
   }
 }
 document.getElementById('auth-input').addEventListener('keydown', e => { if(e.key==='Enter') tryAuth(); });

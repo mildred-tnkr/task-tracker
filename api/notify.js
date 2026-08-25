@@ -7,6 +7,11 @@ export default async function handler(req, res) {
   if (!webhookUrl) return res.status(500).json({ error: 'SLACK_WEBHOOK_URL not configured' });
 
   try {
+    const settings = await kv.get('settings') ?? {};
+    if (settings.notificationsPaused) {
+      return res.status(200).json({ ok: true, sent: false, reason: 'notifications paused' });
+    }
+
     const tasks = await kv.get('tasks') ?? [];
 
     // Eastern Time date helpers

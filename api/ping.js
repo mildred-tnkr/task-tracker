@@ -21,6 +21,11 @@ export default async function handler(req, res) {
   if (Number.isNaN(targetHour)) return res.status(400).json({ error: 'Missing/invalid ?h= target hour (0-23, ET)' });
 
   try {
+    const settings = await kv.get('settings') ?? {};
+    if (settings.notificationsPaused) {
+      return res.status(200).json({ ok: true, sent: false, reason: 'notifications paused' });
+    }
+
     const tasks = await kv.get('tasks') ?? [];
 
     const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
